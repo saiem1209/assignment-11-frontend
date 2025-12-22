@@ -1,109 +1,182 @@
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { AuthContext } from '../Provider/AuthProvider';
+import { AuthContext } from '../Provider/Authprovider';
 import auth from '../Firebase/firebase.config';
 import { updateProfile } from 'firebase/auth';
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import axios from 'axios';
 
 const Registration = () => {
-
     const navigate = useNavigate();
-    const { registerwitheEmalPassword, setUser, user, handlegooglesignin } = useContext(AuthContext);
+    const { registerwitheEmalPassword, setUser } = useContext(AuthContext);
+
+    const [district, setdistrict] = useState([]);
+    const [upozilas, setUpazilas] = useState([]);
+
+    useEffect(() => {
+
+        fetch('/district.json')
+            .then(res => res.json())
+            .then(data => setdistrict(data));
+
+       
+        fetch('/upozilas.json')
+            .then(res => res.json())
+            .then(data => setUpazilas(data));
+    }, []);
 
     const handlesubmit = async (e) => {
         e.preventDefault();
-        const email = e.target.email.value;
-        const password = e.target.password.value;
-        const name = e.target.name.value;
-        const photourl = e.target.photourl;
-        const file = photourl.files[0];
-        console.log(file);
+        const form = e.target;
+        
+        const name = form.name.value;
+        const email = form.email.value;
+        const password = form.password.value;
+        const confirm_password = form.confirm_password.value;
+        const bloodGroup = form.bloodGroup.value;
+        const district = form.district.value;
+        const upozilas = form.upazila.value;
+        const file = form.photourl.files[0];
 
-        const uppercase = /[A-Z]/;
+     
+        if (password !== confirm_password) return toast.error("Passwords do not match!");
+        if (password.length < 6) return toast.error("Password must be at least 6 characters");
+        if (!/[A-Z]/.test(password)) return toast.error("Password must have an Uppercase letter");
+        if (!/[a-z]/.test(password)) return toast.error("Password must have a Lowercase letter");
 
-        const lowercase = /[a-z]/;
+        try {
+            const imageFormData = new FormData();
+            imageFormData.append('image', file);
+            
+            const res = await axios.post(`https://api.imgbb.com/1/upload?key=d66fa7e696ac62bbb4d24d73f0bea711`, imageFormData);
+            const mainPhotoUrl = res.data.data.display_url;
 
-        if (password.length < 6) {
-            return alert("less than 6 characters")
-        }
-        if (!uppercase.test(password)) {
-            return alert("Need a Uppercase")
-        }
-        if (!lowercase.test(password)) {
-            return alert("Need a Lowercase")
-        }
+            if (res.data.success) {
+    
+                const userCredential = await registerwitheEmalPassword(email, password);
+                const user = userCredential.user;
 
-        const res = await axios.post(`https://api.imgbb.com/1/upload?key=d66fa7e696ac62bbb4d24d73f0bea711`, { image: file }, {
-            headers: {
-                'Content-type': 'multipart/form-data'
-            }
-        })
-
-        // console.log(res.data.data.display_url)
-        const mainPhotoUrl = res.data.data.display_url;
-
-        if (res.data.success == true) {
-            registerwitheEmalPassword(email, password)
-                .then((userCredential) => {
-                    updateProfile(auth.currentUser, {
-                        displayName: name, photoURL: mainPhotoUrl
-                    }).then(() => {
-                        setUser(userCredential.user);
-                        toast.success("Registration Successful!");
-                        e.target.reset();
-                        navigate("/")
-                    }).catch((error) => {
-                        toast.error(error.message);
-                    });
-                })
-                .catch((error) => {
-                    toast.error(error.message);
+           
+                await updateProfile(auth.currentUser, {
+                    displayName: name, 
+                    photoURL: mainPhotoUrl
                 });
-        }
-    }
 
-    const googlesignup = () => {
-        handlegooglesignin()
-            .then(result => {
-                const user = result.user
-                setUser(user)
-                navigate("/")
-            })
-            .catch(error => {
-                toast.error(error.message);
-            })
-    }
-    console.log(user);
+                setUser({ ...user, displayName: name, photoURL: mainPhotoUrl });
+
+                const userInfo = {
+                    name,
+                    email,
+                    avatar: mainPhotoUrl,
+                    bloodGroup,
+                    district,
+                    upozilas,
+                    role: 'donor',   
+                    status: 'active' 
+                };
+
+                const dbRes = await axios.post('http://localhost:5000/users', userInfo);
+                
+                if (dbRes.data.insertedId) {
+                    toast.success("Registration Successful!");
+                    form.reset();
+                    navigate("/");
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error(error.message || "Registration failed");
+        }
+    };
+
     return (
-        <div>
-            <div className="hero min-h-screen">
-                <div className="hero-content flex-col lg:flex-row-reverse">
-                    <div className="card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl">
-                        <div className="card-body">
-                            <form onSubmit={handlesubmit} className="fieldset">
-                                <label className="label">Name</label>
-                                <input name='name' type="text" className="input" placeholder="Enter Name" />
-                                <label className="label">PhotoUrl</label>
-                                <input name='photourl' type="file" className="input" placeholder="Enter Image URL" />
-                                <label className="label">Email</label>
-                                <input name='email' type="email" className="input" placeholder="Email" />
-                                <label className="label">Password</label>
-                                <input name='password' type="password" className="input" placeholder="Password" />
-                                <button onClick={googlesignup} className="btn bg-white text-black border-[#e5e5e5]">
-                                    <svg aria-label="Google logo" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><g><path d="m0 0H512V512H0" fill="#fff"></path><path fill="#34a853" d="M153 292c30 82 118 95 171 60h62v48A192 192 0 0190 341"></path><path fill="#4285f4" d="m386 400a140 175 0 0053-179H260v74h102q-7 37-38 57"></path><path fill="#fbbc02" d="m90 341a208 200 0 010-171l63 49q-12 37 0 73"></path><path fill="#ea4335" d="m153 219c22-69 116-109 179-50l55-54c-78-75-230-72-297 55"></path></g></svg>
-                                    Login with Google
-                                </button>
-                                <button className="btn btn-neutral mt-4">Register</button>
-                                <div>
-                                    <span>Already have an account?</span><Link className='text-blue-500' to="/login">Login</Link>
+        <div className="hero min-h-screen bg-base-200 py-10">
+            <div className="hero-content flex-col lg:flex-row-reverse">
+                <div className="card bg-base-100 w-full max-w-lg shrink-0 shadow-2xl">
+                    <div className="card-body">
+                        <h2 className="text-2xl font-bold text-center mb-4">Join as a Donor</h2>
+                        <form onSubmit={handlesubmit} className="form-control gap-3">
+                            
+                     
+                            <div>
+                                <label className="label"><span className="label-text">Name</span></label>
+                                <input name='name' type="text" className="input input-bordered w-full" placeholder="Enter Name" required />
+                            </div>
+
+                        
+                            <div>
+                                <label className="label"><span className="label-text">Email</span></label>
+                                <input name='email' type="email" className="input input-bordered w-full" placeholder="Email" required />
+                            </div>
+
+                            <div>
+                                <label className="label"><span className="label-text">Avatar</span></label>
+                                <input name='photourl' type="file" className="file-input file-input-bordered w-full" required />
+                            </div>
+
+                         
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              
+                                <div className="form-control">
+                                    <label className="label"><span className="label-text">Blood Group</span></label>
+                                    <select name="bloodGroup" className="select select-bordered w-full" required defaultValue="">
+                                        <option value="" disabled>Select</option>
+                                        <option value="A+">A+</option>
+                                        <option value="A-">A-</option>
+                                        <option value="B+">B+</option>
+                                        <option value="B-">B-</option>
+                                        <option value="AB+">AB+</option>
+                                        <option value="AB-">AB-</option>
+                                        <option value="O+">O+</option>
+                                        <option value="O-">O-</option>
+                                    </select>
                                 </div>
 
-                            </form>
-                        </div>
+                         
+                                <div className="form-control">
+                                    <label className="label"><span className="label-text">District</span></label>
+                                    <select name="district" className="select select-bordered w-full" required defaultValue="">
+                                        <option value="" disabled>Select</option>
+                                       
+                                        {district.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                    </select>
+                                </div>
+
+                     
+                                <div className="form-control">
+                                    <label className="label"><span className="label-text">Upazila</span></label>
+                                    <select name="upazila" className="select select-bordered w-full" required defaultValue="">
+                                        <option value="" disabled>Select</option>
+                               
+                                        {upozilas.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                        
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="label"><span className="label-text">Password</span></label>
+                                    <input name='password' type="password" className="input input-bordered w-full" placeholder="Password" required />
+                                </div>
+                                <div>
+                                    <label className="label"><span className="label-text">Confirm Password</span></label>
+                                    <input name='confirm_password' type="password" className="input input-bordered w-full" placeholder="Confirm Password" required />
+                                </div>
+                            </div>
+
+             
+                            <button className="btn btn-error text-white mt-6">Register</button>
+                            
+                            <div className="text-center mt-2">
+                                <span>Already have an account? </span>
+                                <Link className='text-red-500 font-bold' to="/login">Login</Link>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
+            <Toaster />
         </div>
     );
 };
